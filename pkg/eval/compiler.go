@@ -115,6 +115,10 @@ func UnpackCompilationErrors(e error) []*CompilationError {
 	return nil
 }
 
+func (cp *compiler) rootScope() *staticNs {
+	return cp.scopes[0]
+}
+
 func (cp *compiler) thisScope() *staticNs {
 	return cp.scopes[len(cp.scopes)-1]
 }
@@ -180,7 +184,12 @@ func (cp *compiler) autofixUnresolvedVar(qname string) {
 	if len(cp.modules) == 0 {
 		return
 	}
-	first, _ := SplitQName(qname)
+
+	first, rest := SplitQName(qname)
+	if first == ":" {
+		first, _ = SplitQName(rest)
+	}
+
 	mod := strings.TrimSuffix(first, ":")
 	if mod != first && sliceContains(cp.modules, mod) {
 		cp.autofixes = append(cp.autofixes, "use "+mod)

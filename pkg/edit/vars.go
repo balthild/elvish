@@ -10,11 +10,42 @@ import (
 
 func initVarsAPI(nb eval.NsBuilder) {
 	nb.AddGoFns(map[string]any{
+		"has-var":  hasVarFn,
+		"get-var":  getVarFn,
 		"add-var":  addVar,
 		"add-vars": addVars,
 		"del-var":  delVar,
 		"del-vars": delVars,
 	})
+}
+
+func hasVarFn(fm *eval.Frame, name string) bool {
+	if !isUnqualified(name) {
+		return false
+	}
+
+	global := fm.Evaler.Global()
+	variable := global.IndexString(name)
+
+	return variable != nil
+}
+
+func getVarFn(fm *eval.Frame, name string) error {
+	if !isUnqualified(name) {
+		return errs.BadValue{
+			What:  "name argument to edit:get-var",
+			Valid: "unqualified variable name", Actual: name}
+	}
+
+	global := fm.Evaler.Global()
+	variable := global.IndexString(name)
+	if variable == nil {
+		return errs.BadValue{
+			What:  "name argument to edit:get-var",
+			Valid: "non-existent variable name", Actual: name}
+	}
+
+	return fm.ValueOutput().Put(variable.Get())
 }
 
 func addVar(fm *eval.Frame, name string, val any) error {
@@ -68,9 +99,9 @@ func addVars(fm *eval.Frame, m vals.Map) error {
 	return nil
 }
 
-func delVars(fm *eval.Frame, m vals.List) error {
-	names := make(map[string]struct{}, m.Len())
-	for it := m.Iterator(); it.HasElem(); it.Next() {
+func delVars(fm *eval.Frame, l vals.List) error {
+	names := make(map[string]struct{}, l.Len())
+	for it := l.Iterator(); it.HasElem(); it.Next() {
 		n := it.Elem()
 		name, ok := n.(string)
 		if !ok {

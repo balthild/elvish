@@ -31,6 +31,7 @@ type lvalueFlag uint
 const (
 	setLValue lvalueFlag = 1 << iota
 	newLValue
+	globalLValue
 )
 
 func (cp *compiler) compileCompoundLValues(ns []*parse.Compound, f lvalueFlag) lvaluesGroup {
@@ -67,6 +68,13 @@ func (cp *compiler) compileIndexingLValue(n *parse.Indexing, f lvalueFlag) lvalu
 		return dummyLValuesGroup
 	}
 
+	if qname[0] == ':' && f&globalLValue == 0 {
+		cp.errorpf(n, "cannot manipulate variable $%s; "+
+			`fully-qualified variables can only be manipulated with "var", "set", and "del"`,
+			parse.Quote(qname))
+		return dummyLValuesGroup
+	}
+
 	var ref *varRef
 	if f&setLValue != 0 {
 		ref = resolveVarRef(cp, qname, n)
@@ -89,11 +97,18 @@ func (cp *compiler) compileIndexingLValue(n *parse.Indexing, f lvalueFlag) lvalu
 		if len(segs) == 1 {
 			// Unqualified name - implicit local
 			name := segs[0]
-			ref = &varRef{localScope,
-				staticVarInfo{name, false, false}, cp.thisScope().add(name), nil}
+			info := staticVarInfo{name, false, false}
+			index := cp.thisScope().add(name)
+			ref = &varRef{localScope, info, index, nil}
+		} else if len(segs) == 2 && segs[0] == ":" {
+			// Fully-qualified name without namespace - global
+			name := segs[1]
+			info := staticVarInfo{name, false, false}
+			index := cp.rootScope().add(name)
+			ref = &varRef{globalScope, info, index, nil}
 		} else {
 			cp.errorpf(n, "cannot create variable $%s; "+
-				"new variables can only be created in the current scope",
+				"new variables can only be created in the current scope or the global scope",
 				parse.Quote(qname))
 			return dummyLValuesGroup
 		}

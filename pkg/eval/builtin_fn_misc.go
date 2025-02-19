@@ -23,6 +23,9 @@ var (
 
 func init() {
 	addBuiltinFns(map[string]any{
+		"has": hasFn,
+		"get": getFn,
+
 		"kind-of":    kindOf,
 		"constantly": constantly,
 
@@ -43,6 +46,42 @@ var nopGoFn = NewGoFn("nop", nop)
 
 func nop(opts RawOptions, args ...any) {
 	// Do nothing
+}
+
+func hasFn(fm *Frame, names ...string) error {
+	if len(names) == 0 {
+		return errs.ArityMismatch{What: "arguments", ValidLow: 0, ValidHigh: -1, Actual: len(names)}
+	}
+
+	for _, name := range names {
+		ref := resolveVarRef(fm, name, nil)
+		if ref == nil {
+			return fm.ValueOutput().Put(false)
+		}
+	}
+
+	return fm.ValueOutput().Put(true)
+}
+
+func getFn(fm *Frame, names ...string) error {
+	if len(names) == 0 {
+		return errs.ArityMismatch{What: "arguments", ValidLow: 0, ValidHigh: -1, Actual: len(names)}
+	}
+
+	output := fm.ValueOutput()
+	for _, name := range names {
+		ref := resolveVarRef(fm, name, nil)
+		if ref == nil {
+			return errs.BadValue{
+				What:  "arguments passed to \"get\"",
+				Valid: "valid variable names", Actual: name}
+		}
+
+		variable := deref(fm, ref)
+		output.Put(variable.Get())
+	}
+
+	return nil
 }
 
 func kindOf(fm *Frame, args ...any) error {

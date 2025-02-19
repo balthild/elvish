@@ -177,6 +177,13 @@ func (ev *Evaler) DeleteFromGlobal(names map[string]struct{}) {
 	ev.global = g
 }
 
+// DeleteFromGlobalSlot deletes a specific slot in the global namespace.
+func (ev *Evaler) DeleteFromGlobalSlot(index int) {
+	ev.mu.Lock()
+	defer ev.mu.Unlock()
+	ev.global.slots[index] = nil
+}
+
 // Builtin returns the builtin Ns.
 func (ev *Evaler) Builtin() *Ns {
 	ev.mu.RLock()

@@ -39,11 +39,13 @@ const (
 	builtinScope
 	envScope
 	externalScope
+	globalScope
 )
 
 // An interface satisfied by both *compiler and *Frame. Used to implement
 // resolveVarRef as a function that works for both types.
 type scopeSearcher interface {
+	searchGlobal(k string) (staticVarInfo, int)
 	searchLocal(k string) (staticVarInfo, int)
 	searchCapture(k string) (staticVarInfo, int)
 	searchBuiltin(k string, r diag.Ranger) (staticVarInfo, int)
@@ -52,8 +54,8 @@ type scopeSearcher interface {
 // Resolves a qname into a varRef.
 func resolveVarRef(s scopeSearcher, qname string, r diag.Ranger) *varRef {
 	if strings.HasPrefix(qname, ":") {
-		// $:foo is reserved for fully-qualified names in future
-		return nil
+		// Fully-qualified names
+		return resolveVarRefGlobal(s, qname[1:])
 	}
 	if ref := resolveVarRefLocal(s, qname); ref != nil {
 		return ref
@@ -63,6 +65,14 @@ func resolveVarRef(s scopeSearcher, qname string, r diag.Ranger) *varRef {
 	}
 	if ref := resolveVarRefBuiltin(s, qname, r); ref != nil {
 		return ref
+	}
+	return nil
+}
+
+func resolveVarRefGlobal(s scopeSearcher, qname string) *varRef {
+	first, rest := SplitQName(qname)
+	if info, index := s.searchGlobal(first); index != -1 {
+		return &varRef{globalScope, info, index, SplitQNameSegs(rest)}
 	}
 	return nil
 }
@@ -138,6 +148,8 @@ func deref(fm *Frame, ref *varRef) vars.Var {
 
 func derefBase(fm *Frame, ref *varRef) (vars.Var, []string) {
 	switch ref.scope {
+	case globalScope:
+		return fm.Evaler.Global().slots[ref.index], ref.subNames
 	case localScope:
 		return fm.local.slots[ref.index], ref.subNames
 	case captureScope:
@@ -151,6 +163,10 @@ func derefBase(fm *Frame, ref *varRef) (vars.Var, []string) {
 	default:
 		return nil, nil
 	}
+}
+
+func (cp *compiler) searchGlobal(k string) (staticVarInfo, int) {
+	return cp.rootScope().lookup(k)
 }
 
 func (cp *compiler) searchLocal(k string) (staticVarInfo, int) {
@@ -179,6 +195,10 @@ func (cp *compiler) searchBuiltin(k string, r diag.Ranger) (staticVarInfo, int) 
 		cp.checkDeprecatedBuiltin(k, r)
 	}
 	return info, index
+}
+
+func (fm *Frame) searchGlobal(k string) (staticVarInfo, int) {
+	return fm.Evaler.Global().lookup(k)
 }
 
 func (fm *Frame) searchLocal(k string) (staticVarInfo, int) {

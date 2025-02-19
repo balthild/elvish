@@ -89,7 +89,7 @@ func init() {
 
 // VarForm = 'var' { LHS } [ '=' { Compound } ]
 func compileVar(cp *compiler, fn *parse.Form) effectOp {
-	lhs, rhs := compileLHSOptionalRHS(cp, fn.Args, fn.To, newLValue)
+	lhs, rhs := compileLHSOptionalRHS(cp, fn.Args, fn.To, newLValue|globalLValue)
 	if rhs == nil {
 		// Just create new variables, nothing extra to do at runtime.
 		return nopOp{}
@@ -99,7 +99,7 @@ func compileVar(cp *compiler, fn *parse.Form) effectOp {
 
 // SetForm = 'set' { LHS } '=' { Compound }
 func compileSet(cp *compiler, fn *parse.Form) effectOp {
-	lhs, rhs := compileLHSRHS(cp, fn.Args, fn.To, setLValue)
+	lhs, rhs := compileLHSRHS(cp, fn.Args, fn.To, setLValue|globalLValue)
 	return &assignOp{fn.Range(), lhs, rhs, false}
 }
 
@@ -249,11 +249,14 @@ func compileDel(cp *compiler, fn *parse.Form) effectOp {
 		if len(indices) == 0 {
 			if ref.scope == envScope {
 				f = delEnvVarOp{fn.Range(), ref.subNames[0]}
+			} else if ref.scope == globalScope && len(ref.subNames) == 0 {
+				f = delGlobalVarOp{ref.index}
+				cp.rootScope().infos[ref.index].deleted = true
 			} else if ref.scope == localScope && len(ref.subNames) == 0 {
 				f = delLocalVarOp{ref.index}
 				cp.thisScope().infos[ref.index].deleted = true
 			} else {
-				cp.errorpf(cn, "only variables in the local scope or E: can be deleted")
+				cp.errorpf(cn, "only variables in the local scope, the global scope, or E: can be deleted")
 				continue
 			}
 		} else {
@@ -262,6 +265,13 @@ func compileDel(cp *compiler, fn *parse.Form) effectOp {
 		ops = append(ops, f)
 	}
 	return seqOp{ops}
+}
+
+type delGlobalVarOp struct{ index int }
+
+func (op delGlobalVarOp) exec(fm *Frame) Exception {
+	fm.Evaler.DeleteFromGlobalSlot(op.index)
+	return nil
 }
 
 type delLocalVarOp struct{ index int }
